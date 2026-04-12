@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import { ExpoConfig, ConfigContext } from 'expo/config';
-console.log(process.env.EXPO_PUBLIC_MAP_API_KEY);
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -13,38 +12,42 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   splash: {
     image: "./assets/splash.png",
     resizeMode: "contain",
-    backgroundColor: "#ffffff"
+    backgroundColor: "#ffffff",
   },
   ios: {
-    supportsTablet: true
+    supportsTablet: true,
   },
   android: {
-    permissions: ["LOCATION"],
-    package: "com.bunsenplus.boxtrackingmap", 
+    permissions: [
+      "android.permission.ACCESS_FINE_LOCATION",
+      "android.permission.ACCESS_COARSE_LOCATION",
+    ],
+    package: "com.bunsenplus.boxtrackingmap",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: "#ffffff"
+      backgroundColor: "#ffffff",
     },
     config: {
       googleMaps: {
-        apiKey: process.env.EXPO_PUBLIC_MAP_API_KEY
-      }
-    }
+        apiKey: process.env.EXPO_PUBLIC_MAP_API_KEY,
+      },
+    },
   },
   web: {
-    favicon: "./assets/favicon.png"
+    favicon: "./assets/favicon.png",
   },
   extra: {
     EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
     eas: {
-      projectId: "6d62f713-015a-4e73-bfd7-f312e4c7604f"
-    }
+      projectId: "6d62f713-015a-4e73-bfd7-f312e4c7604f",
+    },
   },
   plugins: [
     [
       "@rnmapbox/maps",
-      { RNMAPBOX_MAPS_DOWNLOAD_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_SDK_BINARY_TOKEN }
-    ]
-  ]
-
+      {
+        RNMapboxMapsDownloadToken: process.env.MAPBOX_SECRET_TOKEN,
+      },
+    ],
+  ],
 });

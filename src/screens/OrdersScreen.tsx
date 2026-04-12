@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
     View, Text, FlatList, ActivityIndicator, RefreshControl,
     TouchableOpacity, Alert, Modal, TextInput, StyleSheet,
@@ -21,11 +21,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { updateBoxStatus } from '../utils/rtdbUtils';
 import { sendNotificationEmail } from '../utils/emailService';
 import { Ionicons } from '@expo/vector-icons';
-import MapboxGL from '@rnmapbox/maps';
-import * as Location from 'expo-location';
-import { MAPBOX_ACCESS_TOKEN } from '../config/mapboxConfig';
-
-MapboxGL.setAccessToken(MAPBOX_ACCESS_TOKEN);
+import DeliveryLocationPicker, { PickedLocation } from '../components/DeliveryLocationPicker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,173 +46,9 @@ type OrderStackParamList = {
     OrderScreen: undefined;
 };
 
-type PinCoord = { latitude: number; longitude: number };
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-// ─── Reverse geocode ──────────────────────────────────────────────────────────
-
-async function reverseGeocode(lat: number, lng: number): Promise<string> {
-    try {
-        const url =
-            `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json` +
-            `?access_token=${MAPBOX_ACCESS_TOKEN}&limit=1&types=address,place,neighborhood`;
-        const res = await fetch(url);
-        const json = await res.json();
-        if (json.features?.length > 0) return json.features[0].place_name as string;
-    } catch { /* silent */ }
-    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-}
-
-// ─── Map pin picker modal ─────────────────────────────────────────────────────
-
-// Default centre: Kigali [lng, lat]
-const DEFAULT_REGION: [number, number] = [29.256043, -1.698774];
-
-const DeliveryMapModal: React.FC<{
-    visible: boolean;
-    onConfirm: (coord: PinCoord, address: string) => void;
-    onCancel: () => void;
-}> = ({ visible, onConfirm, onCancel }) => {
-    const [pin, setPin] = useState<PinCoord | null>(null);
-    const [address, setAddress] = useState('');
-    const [geocoding, setGeocoding] = useState(false);
-    const cameraRef = useRef<MapboxGL.Camera>(null);
-
-    // Reset and centre on user when modal opens
-    useEffect(() => {
-        if (!visible) return;
-        setPin(null);
-        setAddress('');
-        (async () => {
-            const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') return;
-            const loc = await Location.getCurrentPositionAsync({});
-            cameraRef.current?.setCamera({
-                centerCoordinate: [loc.coords.longitude, loc.coords.latitude],
-                zoomLevel: 15,
-                animationDuration: 600,
-            });
-        })();
-    }, [visible]);
-
-    const resolvePin = async (lat: number, lng: number) => {
-        const coord = { latitude: lat, longitude: lng };
-        setPin(coord);
-        setGeocoding(true);
-        setAddress('Locating address…');
-        const resolved = await reverseGeocode(lat, lng);
-        setAddress(resolved);
-        setGeocoding(false);
-    };
-
-    const handleMapPress = (e: any) => {
-        const [lng, lat] = e.geometry.coordinates as [number, number];
-        resolvePin(lat, lng);
-    };
-
-    const handleDragEnd = (e: any) => {
-        const [lng, lat] = e.geometry.coordinates as [number, number];
-        resolvePin(lat, lng);
-    };
-
-    return (
-        <Modal visible={visible} animationType="slide" statusBarTranslucent>
-            <View style={mapModalStyles.container}>
-
-                {/* ── Header ── */}
-                <View style={mapModalStyles.header}>
-                    <TouchableOpacity onPress={onCancel} style={mapModalStyles.closeBtn}>
-                        <Ionicons name="close" size={22} color={COLORS.textPrimary} />
-                    </TouchableOpacity>
-                    <View style={mapModalStyles.headerCenter}>
-                        <Text style={mapModalStyles.title}>Set Delivery Location</Text>
-                        <Text style={mapModalStyles.subtitle}>Tap anywhere on the map</Text>
-                    </View>
-                    <View style={{ width: 40 }} />
-                </View>
-
-                {/* ── Map ── */}
-                <MapboxGL.MapView
-                    style={mapModalStyles.map}
-                    styleURL={MapboxGL.StyleURL.Street}
-                    onPress={handleMapPress}
-                    compassEnabled
-                    logoEnabled={false}
-                    attributionEnabled={false}
-                >
-                    <MapboxGL.Camera
-                        ref={cameraRef}
-                        centerCoordinate={DEFAULT_REGION}
-                        zoomLevel={13}
-                        animationMode="flyTo"
-                        animationDuration={600}
-                    />
-
-                    {pin && (
-                        <MapboxGL.PointAnnotation
-                            id="delivery-pin"
-                            coordinate={[pin.longitude, pin.latitude]}
-                            draggable
-                            onDragEnd={handleDragEnd}
-                        >
-                            <View style={mapModalStyles.pinOuter}>
-                                <View style={mapModalStyles.pinInner}>
-                                    <Ionicons name="location" size={18} color="#fff" />
-                                </View>
-                                <View style={mapModalStyles.pinTail} />
-                            </View>
-                            <MapboxGL.Callout title="Delivery here" />
-                        </MapboxGL.PointAnnotation>
-                    )}
-                </MapboxGL.MapView>
-
-                {/* ── Hint overlay (no pin yet) ── */}
-                {!pin && (
-                    <View style={mapModalStyles.tapHint} pointerEvents="none">
-                        <Ionicons name="finger-print" size={20} color={COLORS.primary} />
-                        <Text style={mapModalStyles.tapHintText}>
-                            Tap the map to pin your delivery spot
-                        </Text>
-                    </View>
-                )}
-
-                {/* ── Footer: address + confirm ── */}
-                {pin && (
-                    <View style={mapModalStyles.footer}>
-                        <View style={mapModalStyles.addressRow}>
-                            {geocoding
-                                ? <ActivityIndicator size="small" color={COLORS.primary} />
-                                : <Ionicons name="location" size={16} color={COLORS.primary} />
-                            }
-                            <Text style={mapModalStyles.addressText} numberOfLines={2}>
-                                {address || `${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)}`}
-                            </Text>
-                        </View>
-
-                        <Text style={mapModalStyles.dragHint}>
-                            You can drag the pin to fine-tune the position
-                        </Text>
-
-                        <TouchableOpacity
-                            style={[mapModalStyles.confirmBtn, geocoding && { opacity: 0.55 }]}
-                            onPress={() => onConfirm(pin, address)}
-                            disabled={geocoding}
-                            activeOpacity={0.85}
-                        >
-                            <Ionicons name="checkmark-circle" size={18} color="#fff" style={{ marginRight: 8 }} />
-                            <Text style={mapModalStyles.confirmBtnText}>Confirm & Place Order</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-            </View>
-        </Modal>
-    );
-};
-
-// ─── Order sub-components ─────────────────────────────────────────────────────
-
-const OrderHeader: React.FC<{ order: Order; isAdmin: boolean; loading: boolean }> = ({
-                                                                                         order, isAdmin,
-                                                                                     }) => (
+const OrderHeader: React.FC<{ order: Order; isAdmin: boolean }> = ({ order, isAdmin }) => (
     <View style={cardStyles.header}>
         <View style={cardStyles.headerLeft}>
             <Text style={cardStyles.orderId}>#{order.orderId?.slice(-10) ?? order.id.slice(-10)}</Text>
@@ -226,6 +58,17 @@ const OrderHeader: React.FC<{ order: Order; isAdmin: boolean; loading: boolean }
             status={order.delivered ? 'delivered' : (!order.boxId ? 'unassigned' : 'pending')}
             showIcon
         />
+    </View>
+);
+
+const MetaItem: React.FC<{
+    icon: React.ComponentProps<typeof Ionicons>['name'];
+    label: string;
+    color: string;
+}> = ({ icon, label, color }) => (
+    <View style={cardStyles.metaItem}>
+        <Ionicons name={icon} size={13} color={color} style={{ marginRight: 5 }} />
+        <Text style={[cardStyles.metaText, { color }]}>{label}</Text>
     </View>
 );
 
@@ -241,9 +84,9 @@ const OrderMeta: React.FC<{ order: Order }> = ({ order }) => (
             label={order.timestamp?.toDate().toLocaleString() ?? '—'}
             color={COLORS.textMuted}
         />
-        {order.deliveryAddress ? (
+        {!!order.deliveryAddress && (
             <MetaItem icon="location-outline" label={order.deliveryAddress} color={COLORS.textSecondary} />
-        ) : null}
+        )}
         {!order.delivered && order.boxId && (
             <MetaItem
                 icon={order.status ? 'lock-open-outline' : 'lock-closed-outline'}
@@ -254,23 +97,12 @@ const OrderMeta: React.FC<{ order: Order }> = ({ order }) => (
     </View>
 );
 
-const MetaItem: React.FC<{
-    icon: React.ComponentProps<typeof Ionicons>['name'];
-    label: string;
-    color: string;
-}> = ({ icon, label, color }) => (
-    <View style={cardStyles.metaItem}>
-        <Ionicons name={icon} size={13} color={color} style={{ marginRight: 5 }} />
-        <Text style={[cardStyles.metaText, { color }]}>{label}</Text>
-    </View>
-);
-
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 const OrdersScreen: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [isBoxModalVisible, setIsBoxModalVisible] = useState(false);
-    const [isMapPickerVisible, setIsMapPickerVisible] = useState(false);
+    const [isPickerVisible, setIsPickerVisible] = useState(false);
     const [orderBoxId, setOrderBoxId] = useState('');
     const [selectedOrder, setSelectedOrder] = useState<Order | undefined>();
     const [orders, setOrders] = useState<Order[]>([]);
@@ -281,20 +113,25 @@ const OrdersScreen: React.FC = () => {
     const showBoxModal = (item: Order) => { setSelectedOrder(item); setIsBoxModalVisible(true); };
     const hideBoxModal = () => { setIsBoxModalVisible(false); setOrderBoxId(''); };
 
+    // ── Fetch orders ──
+
     const fetchOrders = useCallback(async () => {
         if (!user) return;
         try {
             setLoading(true);
             listenerCleanups.forEach(fn => fn());
+
             const q = userRole === 'Admin'
                 ? query(collection(db, 'orders'), orderBy('timestamp', 'desc'))
                 : query(collection(db, 'orders'), orderBy('timestamp', 'desc'), where('email', '==', user.email));
+
             const snap = await getDocs(q);
             let fetchedOrders: Order[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as Order));
 
+            // Lazy 3-day auto-confirm
             fetchedOrders = await Promise.all(fetchedOrders.map(async (order) => {
                 if (!order.delivered && order.adminConfirmedDelivery && order.adminConfirmedAt) {
-                    const elapsed = (Date.now() - order.adminConfirmedAt.toDate().getTime()) / (1000 * 60 * 60 * 24);
+                    const elapsed = (Date.now() - order.adminConfirmedAt.toDate().getTime()) / 86_400_000;
                     if (elapsed >= 3) {
                         await updateDoc(doc(db, 'orders', order.id), { delivered: true });
                         return { ...order, delivered: true };
@@ -302,19 +139,19 @@ const OrdersScreen: React.FC = () => {
                 }
                 return order;
             }));
+
             setOrders(fetchedOrders);
 
             const cleanups: (() => void)[] = [];
             fetchedOrders.forEach(order => {
-                if (order.boxId) {
-                    const statusRef = ref(rtdb, `statuses/${order.boxId}/status`);
-                    const handler = (snapshot: DataSnapshot) => {
-                        const val = snapshot.exists() ? (snapshot.val() as boolean) : null;
-                        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: val } : o));
-                    };
-                    onValue(statusRef, handler);
-                    cleanups.push(() => off(statusRef));
-                }
+                if (!order.boxId) return;
+                const statusRef = ref(rtdb, `statuses/${order.boxId}/status`);
+                const handler = (snapshot: DataSnapshot) => {
+                    const val = snapshot.exists() ? (snapshot.val() as boolean) : null;
+                    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: val } : o));
+                };
+                onValue(statusRef, handler);
+                cleanups.push(() => off(statusRef));
             });
             setListenerCleanups(cleanups);
         } catch (err) {
@@ -329,9 +166,10 @@ const OrdersScreen: React.FC = () => {
         return () => { listenerCleanups.forEach(fn => fn()); };
     }, [user]);
 
-    // ── Called when user confirms pin on the map picker ──
-    const handlePlaceOrder = async (coord: PinCoord, address: string) => {
-        setIsMapPickerVisible(false);
+    // ── Place order — called when picker confirms a location ──
+
+    const handlePlaceOrder = async (picked: PickedLocation) => {
+        setIsPickerVisible(false);
         if (!user?.email) return;
         try {
             setLoading(true);
@@ -344,22 +182,29 @@ const OrdersScreen: React.FC = () => {
                 delivered: false,
                 adminConfirmedDelivery: false,
                 adminConfirmedAt: null,
-                deliveryAddress: address,
-                deliveryLatitude: String(coord.latitude),
-                deliveryLongitude: String(coord.longitude),
+                deliveryAddress: picked.address,
+                deliveryLatitude: String(picked.latitude),
+                deliveryLongitude: String(picked.longitude),
             });
             await updateDoc(docRef, { orderId: docRef.id });
-
             const shortId = docRef.id.slice(-10);
-            sendNotificationEmail(user.email, `Order Confirmation #${shortId}`,
-                `<h2>Thank you!</h2><p>Order <b>#${shortId}</b> received.</p><p>Delivery: <b>${address}</b></p>`);
+
+            sendNotificationEmail(
+                user.email,
+                `Order Confirmation #${shortId}`,
+                `<h2>Thank you!</h2><p>Order <b>#${shortId}</b> received.</p><p>Delivery: <b>${picked.address}</b></p>`
+            );
 
             try {
                 const adminSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'Admin')));
                 const adminEmails = adminSnap.docs.map(d => d.data().email).filter(Boolean);
-                if (adminEmails.length > 0)
-                    sendNotificationEmail(adminEmails.join(','), `New Order: #${shortId}`,
-                        `<p>Customer <b>${user.email}</b> placed order <b>#${shortId}</b>. Delivery: <b>${address}</b></p>`);
+                if (adminEmails.length > 0) {
+                    sendNotificationEmail(
+                        adminEmails.join(','),
+                        `New Order: #${shortId}`,
+                        `<p>Customer <b>${user.email}</b> placed order <b>#${shortId}</b>. Delivery: <b>${picked.address}</b></p>`
+                    );
+                }
             } catch { /* non-fatal */ }
 
             fetchOrders();
@@ -370,6 +215,50 @@ const OrdersScreen: React.FC = () => {
             setLoading(false);
         }
     };
+
+    // ── Edit delivery address for an existing order ──
+
+    const handleEditDelivery = (item: Order) => {
+        setSelectedOrder(item);
+        setIsPickerVisible(true);
+    };
+
+    const handleUpdateDelivery = async (picked: PickedLocation) => {
+        setIsPickerVisible(false);
+        if (!selectedOrder) return;
+        try {
+            setLoading(true);
+            await updateDoc(doc(db, 'orders', selectedOrder.orderId), {
+                deliveryAddress: picked.address,
+                deliveryLatitude: String(picked.latitude),
+                deliveryLongitude: String(picked.longitude),
+            });
+            fetchOrders();
+        } catch (err) {
+            console.error('Error updating delivery:', err);
+            Alert.alert('Error', 'Failed to update delivery address.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // selectedOrder distinguishes new order vs edit:
+    // selectedOrder === undefined → new order flow
+    // selectedOrder !== undefined → edit flow
+    const onPickerConfirm = (picked: PickedLocation) => {
+        if (selectedOrder) {
+            handleUpdateDelivery(picked);
+        } else {
+            handlePlaceOrder(picked);
+        }
+    };
+
+    const openNewOrderPicker = () => {
+        setSelectedOrder(undefined);
+        setIsPickerVisible(true);
+    };
+
+    // ── Other handlers ──
 
     const handleDeleteOrder = (item: Order) => {
         Alert.alert('Delete Order', 'Permanently delete this order?', [
@@ -396,7 +285,8 @@ const OrdersScreen: React.FC = () => {
                             adminConfirmedDelivery: true,
                             adminConfirmedAt: Timestamp.now(),
                         });
-                        sendNotificationEmail(item.email, `Confirm Delivery #${item.orderId.slice(-10)}`,
+                        const shortId = item.orderId.slice(-10);
+                        sendNotificationEmail(item.email, `Confirm Delivery #${shortId}`,
                             `<p>Admin marked your order as delivered. Please confirm in the app within 3 days.</p>`);
                         fetchOrders();
                     } catch (err) { console.error(err); }
@@ -437,16 +327,43 @@ const OrdersScreen: React.FC = () => {
 
     const handleAddBoxId = async () => {
         if (!selectedOrder || !orderBoxId.trim()) return;
+        const newBoxId = orderBoxId.trim();
+
         try {
             setLoading(true);
-            await updateDoc(doc(db, 'orders', selectedOrder.orderId), { boxId: orderBoxId.trim() });
-            sendNotificationEmail(selectedOrder.email, `Box Assigned #${selectedOrder.orderId.slice(-10)}`,
-                `<p>Your order is in Box <b>${orderBoxId.trim()}</b>.</p>`);
+
+            // 1. Check if the box is already assigned to an undelivered order
+            const activeBoxQuery = query(
+                collection(db, 'orders'),
+                where('boxId', '==', newBoxId),
+                where('delivered', '==', false)
+            );
+            const activeBoxSnap = await getDocs(activeBoxQuery);
+
+            if (!activeBoxSnap.empty) {
+                Alert.alert(
+                    'Box Unavailable',
+                    `Box ${newBoxId} is currently assigned to another order that has not been delivered yet.`
+                );
+                setLoading(false);
+                return; // Stop the function here and keep the modal open
+            }
+
+            // 2. If the box is free, proceed with the assignment
+            await updateDoc(doc(db, 'orders', selectedOrder.orderId), { boxId: newBoxId });
+            const shortId = selectedOrder.orderId.slice(-10);
+            sendNotificationEmail(selectedOrder.email, `Box Assigned #${shortId}`,
+                `<p>Order <b>#${shortId}</b> is in Box <b>${newBoxId}</b>.</p>`);
+
             fetchOrders();
+            hideBoxModal(); // Only close the modal on success
         } catch (err) {
             console.error(err);
             Alert.alert('Error', 'Failed to assign box ID.');
-        } finally { setLoading(false); hideBoxModal(); }
+            hideBoxModal();
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleToggleBox = (item: Order) => {
@@ -466,13 +383,15 @@ const OrdersScreen: React.FC = () => {
         ]);
     };
 
+    // ── Render item ──
+
     const renderItem = ({ item }: { item: Order }) => {
         const isFullyDelivered = item.delivered;
         const isAwaitingCustomer = !isFullyDelivered && item.adminConfirmedDelivery;
 
         return (
             <View style={cardStyles.card}>
-                <OrderHeader order={item} isAdmin={userRole === 'Admin'} loading={loading} />
+                <OrderHeader order={item} isAdmin={userRole === 'Admin'} />
                 {!isFullyDelivered && <OrderMeta order={item} />}
 
                 {isFullyDelivered && (
@@ -509,12 +428,21 @@ const OrdersScreen: React.FC = () => {
                     )}
 
                     <View style={cardStyles.iconActions}>
+                        {/* Track on map */}
                         {!isFullyDelivered && item.boxId && (
                             <MySmallButton
                                 handleSubmit={() => navigation.navigate('MapScreen', { order: item })}
                                 color={COLORS.primary} iconName="location" size={22} isLoading={loading}
                             />
                         )}
+                        {/* Edit delivery pin */}
+                        {!isFullyDelivered && (
+                            <MySmallButton
+                                handleSubmit={() => handleEditDelivery(item)}
+                                color="#8B5CF6" iconName="pencil" size={22} isLoading={loading}
+                            />
+                        )}
+
                         {userRole === 'Admin' ? (
                             <>
                                 {!isFullyDelivered && (
@@ -548,10 +476,12 @@ const OrdersScreen: React.FC = () => {
         );
     };
 
+    // ── Render ──
+
     return (
         <View style={{ flex: 1, backgroundColor: COLORS.background }}>
 
-            {/* ── Assign Box Modal ── */}
+            {/* Assign Box Modal */}
             <Modal visible={isBoxModalVisible} animationType="fade" transparent>
                 <View style={globalStyles.modalContainer}>
                     <View style={globalStyles.modalContent}>
@@ -587,19 +517,15 @@ const OrdersScreen: React.FC = () => {
                 </View>
             </Modal>
 
-            {/* ── Map pin picker (full screen) ── */}
-            <DeliveryMapModal
-                visible={isMapPickerVisible}
-                onConfirm={handlePlaceOrder}
-                onCancel={() => setIsMapPickerVisible(false)}
+            {/* Delivery Location Picker */}
+            <DeliveryLocationPicker
+                visible={isPickerVisible}
+                onConfirm={onPickerConfirm}
+                onCancel={() => setIsPickerVisible(false)}
             />
 
             <View style={localStyles.topBar}>
-                <MyButton
-                    title="+ Place New Order"
-                    handleSubmit={() => setIsMapPickerVisible(true)}
-                    isLoading={loading}
-                />
+                <MyButton title="+ Place New Order" handleSubmit={openNewOrderPicker} isLoading={loading} />
             </View>
 
             {loading && orders.length === 0 ? (
@@ -624,7 +550,7 @@ const OrdersScreen: React.FC = () => {
                         <EmptyState
                             icon="cube-outline"
                             title="No orders found"
-                            subtitle="Tap 'Place New Order' to get started."
+                            subtitle="Tap '+ Place New Order' to get started."
                         />
                     }
                 />
@@ -636,98 +562,6 @@ const OrdersScreen: React.FC = () => {
 export default OrdersScreen;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-
-const mapModalStyles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingTop: 56,
-        paddingBottom: 12,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
-    },
-    closeBtn: {
-        width: 40, height: 40, borderRadius: 12,
-        backgroundColor: COLORS.background,
-        justifyContent: 'center', alignItems: 'center',
-    },
-    headerCenter: { flex: 1, alignItems: 'center' },
-    title: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary },
-    subtitle: { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
-
-    map: { flex: 1 },
-
-    tapHint: {
-        position: 'absolute',
-        bottom: 40,
-        alignSelf: 'center',
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        paddingHorizontal: 18,
-        paddingVertical: 12,
-        borderRadius: 24,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    tapHintText: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary },
-
-    // Custom pin shape
-    pinOuter: { alignItems: 'center' },
-    pinInner: {
-        width: 40, height: 40, borderRadius: 20,
-        backgroundColor: COLORS.primary,
-        justifyContent: 'center', alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.25, shadowRadius: 6,
-        elevation: 6,
-        borderWidth: 3, borderColor: '#fff',
-    },
-    pinTail: {
-        width: 0, height: 0,
-        borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 10,
-        borderLeftColor: 'transparent', borderRightColor: 'transparent',
-        borderTopColor: COLORS.primary,
-        marginTop: -1,
-    },
-
-    footer: {
-        backgroundColor: '#fff',
-        paddingHorizontal: 20,
-        paddingTop: 16,
-        paddingBottom: 32,
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -3 },
-        shadowOpacity: 0.08, shadowRadius: 10,
-        elevation: 10,
-    },
-    addressRow: {
-        flexDirection: 'row', alignItems: 'flex-start',
-        gap: 10, marginBottom: 4,
-    },
-    addressText: {
-        flex: 1, fontSize: 14, fontWeight: '600',
-        color: COLORS.textPrimary, lineHeight: 20,
-    },
-    dragHint: { fontSize: 11, color: COLORS.textMuted, marginBottom: 14, marginTop: 2 },
-    confirmBtn: {
-        flexDirection: 'row',
-        backgroundColor: COLORS.primary,
-        paddingVertical: 15, borderRadius: 14,
-        alignItems: 'center', justifyContent: 'center',
-    },
-    confirmBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-});
 
 const cardStyles = StyleSheet.create({
     card: {
@@ -767,7 +601,7 @@ const cardStyles = StyleSheet.create({
         borderRadius: 10, borderWidth: 1.5,
     },
     boxBtnText: { fontSize: 12, fontWeight: '700' },
-    iconActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto' },
+    iconActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto', gap: 4 },
 });
 
 const localStyles = StyleSheet.create({
