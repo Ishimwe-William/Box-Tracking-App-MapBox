@@ -127,7 +127,7 @@ export const styles = StyleSheet.create({
     // ─── Buttons ──────────────────────────────────────────────
     myButton: {
         backgroundColor: COLORS.primary,
-        height: 52,
+        height: 42,
         marginVertical: 8,
         marginHorizontal: 0,
         justifyContent: 'center',

@@ -409,7 +409,7 @@ const OrdersScreen: React.FC = () => {
                     </View>
                 )}
 
-                <View style={cardStyles.actions}>
+             <View style={cardStyles.actions}>
                     {!isFullyDelivered && item.boxId && (
                         <TouchableOpacity
                             style={[cardStyles.boxBtn, { borderColor: item.status ? COLORS.success : COLORS.primary }]}
@@ -426,7 +426,8 @@ const OrdersScreen: React.FC = () => {
                             </Text>
                         </TouchableOpacity>
                     )}
-
+                </View>
+                <View style={cardStyles.actions}>
                     <View style={cardStyles.iconActions}>
                         {/* Track on map */}
                         {!isFullyDelivered && item.boxId && (
@@ -591,7 +592,7 @@ const cardStyles = StyleSheet.create({
     },
     deliveredText: { fontSize: 12, fontWeight: '600', color: COLORS.success },
     actions: {
-        flexDirection: 'row', justifyContent: 'space-between',
+        flexDirection: 'row', justifyContent: 'center',
         alignItems: 'center', marginTop: 4,
         borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 10,
     },
@@ -601,12 +602,14 @@ const cardStyles = StyleSheet.create({
         borderRadius: 10, borderWidth: 1.5,
     },
     boxBtnText: { fontSize: 12, fontWeight: '700' },
-    iconActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto', gap: 4 },
+    iconActions: {
+        flexDirection: 'row',
+    },
 });
 
 const localStyles = StyleSheet.create({
     topBar: {
-        paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4,
+        paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4,
         backgroundColor: COLORS.background,
     },
     modalRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
