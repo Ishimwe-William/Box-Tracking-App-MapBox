@@ -1,20 +1,53 @@
 import React, {useEffect, useState, useMemo} from 'react';
 import {
     View, Text, StyleSheet, FlatList, Image,
-    ActivityIndicator, RefreshControl, TouchableOpacity, Modal, TextInput, Keyboard, Platform
+    ActivityIndicator, RefreshControl, TouchableOpacity, Modal, TextInput, Keyboard, Platform, Alert
 } from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 import {COLORS} from '../styles/styles';
 import {SafeAreaView} from "react-native-safe-area-context";
 import {filterImages, CloudinaryResource} from '../utils/imageFilterUtil';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import PagerView from 'react-native-pager-view';
+import {Directory, File, Paths} from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 
 const CLOUD_NAME = 'dr1nuiyin';
 const TAG = 'box_tracking';
 
-const ImageCard = ({item, onPress}: { item: CloudinaryResource; onPress: (url: string) => void }) => {
+// --- Shared Download Function (Cache Collision Fix) ---
+const downloadImage = async (url: string, filename: string) => {
+    try {
+        // Request gallery permissions
+        const {status} = await MediaLibrary.requestPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission Denied', 'We need permission to save images to your gallery.');
+            return;
+        }
+
+        // 1. Create a UNIQUE temporary folder in the cache for this specific download
+        // Using Date.now() ensures this folder name never repeats
+        const tempDir = new Directory(Paths.cache, `download_${Date.now()}`);
+        tempDir.create();
+
+        // 2. Download the file directly into that guaranteed-empty folder
+        const downloadedFile = await File.downloadFileAsync(url, tempDir);
+
+        // 3. Save the resulting file URI to the phone's gallery
+        await MediaLibrary.createAssetAsync(downloadedFile.uri);
+        Alert.alert('Success', 'Image saved to your gallery!');
+
+    } catch (error) {
+        console.error('Download error:', error);
+        Alert.alert('Error', 'Failed to save the image.');
+    }
+};
+
+const ImageCard = ({item, onPress}: { item: CloudinaryResource; onPress: () => void }) => {
     const [isImageLoading, setIsImageLoading] = useState(true);
+
     const thumbnailUrl = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/c_fill,w_400,h_400,q_auto,f_auto/v${item.version}/${item.public_id}.${item.format}`;
+    // Always download the full size/highest quality version
     const fullSizeUrl = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/q_auto,f_auto/v${item.version}/${item.public_id}.${item.format}`;
     const filename = item.public_id.split('/').pop() || 'Unknown Image';
 
@@ -23,7 +56,7 @@ const ImageCard = ({item, onPress}: { item: CloudinaryResource; onPress: (url: s
         : '';
 
     return (
-        <TouchableOpacity style={localStyles.cardContainer} activeOpacity={0.8} onPress={() => onPress(fullSizeUrl)}>
+        <TouchableOpacity style={localStyles.cardContainer} activeOpacity={0.8} onPress={onPress}>
             <View style={localStyles.imageWrapper}>
                 {isImageLoading && (
                     <View style={localStyles.imageLoader}>
@@ -38,8 +71,17 @@ const ImageCard = ({item, onPress}: { item: CloudinaryResource; onPress: (url: s
                 />
             </View>
             <View style={localStyles.nameWrapper}>
-                <Text style={localStyles.imageName} numberOfLines={1} ellipsizeMode="middle">{filename}</Text>
-                {displayDate ? <Text style={localStyles.dateText}>{displayDate}</Text> : null}
+                <View style={localStyles.nameTextColumn}>
+                    <Text style={localStyles.imageName} numberOfLines={1} ellipsizeMode="middle">{filename}</Text>
+                    {displayDate ? <Text style={localStyles.dateText}>{displayDate}</Text> : null}
+                </View>
+                {/* 2. Download Button on the Grid Card */}
+                <TouchableOpacity
+                    style={localStyles.cardDownloadBtn}
+                    onPress={() => downloadImage(fullSizeUrl, `${filename}.${item.format}`)}
+                >
+                    <Ionicons name="download-outline" size={20} color={COLORS.primary}/>
+                </TouchableOpacity>
             </View>
         </TouchableOpacity>
     );
@@ -50,15 +92,14 @@ function OrderImagesScreen() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
-    const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
 
-    // Search & Filter State
+    const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
     const [searchQuery, setSearchQuery] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [startDate, setStartDate] = useState<Date | null>(null);
     const [endDate, setEndDate] = useState<Date | null>(null);
 
-    // --- 2. New Date Picker State ---
     const [showPicker, setShowPicker] = useState(false);
     const [pickerTarget, setPickerTarget] = useState<'start' | 'end'>('start');
 
@@ -92,26 +133,22 @@ function OrderImagesScreen() {
         return filterImages(images, searchQuery, startDate, endDate);
     }, [images, searchQuery, startDate, endDate]);
 
-    // --- 3. Date Picker Handlers ---
     const openPicker = (target: 'start' | 'end') => {
         setPickerTarget(target);
         setShowPicker(true);
     };
 
     const handleDateChange = (event: any, selectedDate?: Date) => {
-        // Android fires this event instantly when a user presses OK or Cancel.
         if (Platform.OS === 'android') {
             setShowPicker(false);
         }
 
         if (event.type === 'set' && selectedDate) {
             if (pickerTarget === 'start') {
-                // Force time to 00:00:00.000 (Start of the day)
                 const startOfDay = new Date(selectedDate);
                 startOfDay.setHours(0, 0, 0, 0);
                 setStartDate(startOfDay);
             } else {
-                // Force time to 23:59:59.999 (End of the day)
                 const endOfDay = new Date(selectedDate);
                 endOfDay.setHours(23, 59, 59, 999);
                 setEndDate(endOfDay);
@@ -132,7 +169,6 @@ function OrderImagesScreen() {
     return (
         <View style={localStyles.container}>
             <View style={localStyles.headerContainer}>
-
                 <View style={localStyles.searchRow}>
                     <View style={localStyles.searchBar}>
                         <Ionicons name="search" size={20} color={COLORS.textMuted} style={localStyles.searchIcon}/>
@@ -164,7 +200,6 @@ function OrderImagesScreen() {
                 {showFilters && (
                     <View style={localStyles.dateFilterContainer}>
                         <View style={localStyles.dateButtonsRow}>
-                            {/* 4. Attach openPicker to the buttons */}
                             <TouchableOpacity style={localStyles.dateButton} onPress={() => openPicker('start')}>
                                 <Ionicons name="calendar-outline" size={16} color={COLORS.textMuted}/>
                                 <Text style={localStyles.dateButtonText}>
@@ -198,18 +233,12 @@ function OrderImagesScreen() {
                 )}
             </View>
 
-            {/* 5. Render the actual Date Picker conditionally */}
             {showPicker && (
                 <DateTimePicker
-                    value={
-                        pickerTarget === 'start'
-                            ? (startDate || new Date())
-                            : (endDate || new Date())
-                    }
+                    value={pickerTarget === 'start' ? (startDate || new Date()) : (endDate || new Date())}
                     mode="date"
                     display="default"
                     onChange={handleDateChange}
-                    // Prevent picking an end date before the start date
                     minimumDate={pickerTarget === 'end' && startDate ? startDate : undefined}
                 />
             )}
@@ -217,7 +246,9 @@ function OrderImagesScreen() {
             <FlatList
                 data={filteredImages}
                 keyExtractor={(item) => item.public_id}
-                renderItem={({item}) => <ImageCard item={item} onPress={setSelectedImageUrl}/>}
+                renderItem={({item, index}) => (
+                    <ImageCard item={item} onPress={() => setSelectedIndex(index)}/>
+                )}
                 numColumns={2}
                 contentContainerStyle={localStyles.listContent}
                 ListEmptyComponent={
@@ -231,15 +262,58 @@ function OrderImagesScreen() {
                 keyboardShouldPersistTaps="handled"
             />
 
-            <Modal visible={!!selectedImageUrl} transparent={true} animationType="fade"
-                   onRequestClose={() => setSelectedImageUrl(null)}>
+            <Modal
+                visible={selectedIndex !== null}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setSelectedIndex(null)}
+            >
                 <SafeAreaView style={localStyles.modalContainer}>
-                    <TouchableOpacity style={localStyles.closeButton} onPress={() => setSelectedImageUrl(null)}>
-                        <Ionicons name="close-circle" size={36} color="#FFFFFF"/>
-                    </TouchableOpacity>
-                    {selectedImageUrl && (
-                        <Image source={{uri: selectedImageUrl}} style={localStyles.fullScreenImage}
-                               resizeMode="contain"/>
+                    {/* Top Controls: Close & Download */}
+                    <View style={localStyles.modalHeaderRow}>
+                        {selectedIndex !== null && filteredImages[selectedIndex] && (
+                            <TouchableOpacity
+                                style={localStyles.modalActionButton}
+                                onPress={() => {
+                                    const activeImg = filteredImages[selectedIndex];
+                                    const fullSizeUrl = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/q_auto,f_auto/v${activeImg.version}/${activeImg.public_id}.${activeImg.format}`;
+                                    const filename = `${activeImg.public_id.split('/').pop()}.${activeImg.format}`;
+                                    downloadImage(fullSizeUrl, filename);
+                                }}
+                            >
+                                <Ionicons name="download" size={28} color="#FFFFFF"/>
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity style={localStyles.modalActionButton} onPress={() => setSelectedIndex(null)}>
+                            <Ionicons name="close-circle" size={32} color="#FFFFFF"/>
+                        </TouchableOpacity>
+                    </View>
+
+                    {selectedIndex !== null && (
+                        <PagerView
+                            style={localStyles.pagerView}
+                            initialPage={selectedIndex}
+                            overdrag={true}
+                            onPageSelected={(e) => setSelectedIndex(e.nativeEvent.position)} // Keep index synced when swiping
+                        >
+                            {filteredImages.map((img, idx) => {
+                                const fullSizeUrl = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/q_auto,f_auto/v${img.version}/${img.public_id}.${img.format}`;
+
+                                return (
+                                    <View key={img.public_id} style={localStyles.pageContainer}>
+                                        <Image
+                                            source={{uri: fullSizeUrl}}
+                                            style={localStyles.fullScreenImage}
+                                            resizeMode="contain"
+                                        />
+                                        <Text style={localStyles.imageCounter}>
+                                            {idx + 1} of {filteredImages.length}
+                                        </Text>
+                                    </View>
+                                );
+                            })}
+                        </PagerView>
                     )}
                 </SafeAreaView>
             </Modal>
@@ -266,9 +340,27 @@ const localStyles = StyleSheet.create({
     },
     imageLoader: {...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 1},
     image: {width: '100%', height: '100%', zIndex: 2},
-    nameWrapper: {padding: 8, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border},
-    imageName: {fontSize: 12, color: COLORS.textPrimary, textAlign: 'center', fontWeight: '500'},
-    dateText: {fontSize: 10, color: COLORS.textMuted, textAlign: 'center', marginTop: 2},
+
+    // --- Updated Card Name Wrapper to fit the icon ---
+    nameWrapper: {
+        padding: 8,
+        backgroundColor: COLORS.surface,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+    },
+    nameTextColumn: {
+        flex: 1,
+        paddingRight: 4,
+    },
+    imageName: {fontSize: 12, color: COLORS.textPrimary, fontWeight: '500'},
+    dateText: {fontSize: 10, color: COLORS.textMuted, marginTop: 2},
+    cardDownloadBtn: {
+        padding: 4,
+    },
+
     emptyText: {textAlign: 'center', color: COLORS.textMuted, marginTop: 40, fontSize: 16},
 
     headerContainer: {
@@ -278,86 +370,52 @@ const localStyles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: COLORS.border,
     },
-    searchRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-    },
+    searchRow: {flexDirection: 'row', alignItems: 'center', gap: 10},
     searchBar: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.surface,
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        height: 48,
-        borderWidth: 1,
-        borderColor: COLORS.border
+        flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface,
+        borderRadius: 10, paddingHorizontal: 12, height: 48, borderWidth: 1, borderColor: COLORS.border
     },
     searchIcon: {marginRight: 8},
     searchInput: {flex: 1, fontSize: 16, color: COLORS.textPrimary, height: '100%'},
 
     filterButton: {
-        width: 48,
-        height: 48,
-        borderRadius: 10,
-        backgroundColor: COLORS.surface,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: COLORS.border,
+        width: 48, height: 48, borderRadius: 10, backgroundColor: COLORS.surface,
+        justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border,
     },
-    filterButtonActive: {
-        backgroundColor: COLORS.primary,
-        borderColor: COLORS.primary,
-    },
+    filterButtonActive: {backgroundColor: COLORS.primary, borderColor: COLORS.primary},
 
-    dateFilterContainer: {
-        marginTop: 12,
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderTopColor: COLORS.border,
-    },
-    dateButtonsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
+    dateFilterContainer: {marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border},
+    dateButtonsRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
     dateButton: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: COLORS.surface,
-        paddingVertical: 10,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        gap: 6,
+        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface,
+        paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: COLORS.border, gap: 6,
     },
-    dateButtonText: {
-        fontSize: 14,
-        color: COLORS.textPrimary,
-        fontWeight: '500',
-    },
-    dateSeparator: {
-        marginHorizontal: 12,
-        fontSize: 14,
-        color: COLORS.textMuted,
-        fontWeight: '500',
-    },
-    clearButton: {
-        marginTop: 12,
-        paddingVertical: 8,
-        alignItems: 'center',
-    },
-    clearButtonText: {
-        color: COLORS.error,
-        fontSize: 14,
-        fontWeight: '600',
-    },
+    dateButtonText: {fontSize: 14, color: COLORS.textPrimary, fontWeight: '500'},
+    dateSeparator: {marginHorizontal: 12, fontSize: 14, color: COLORS.textMuted, fontWeight: '500'},
+    clearButton: {marginTop: 12, paddingVertical: 8, alignItems: 'center'},
+    clearButtonText: {color: COLORS.error, fontSize: 14, fontWeight: '600'},
 
-    modalContainer: {flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.9)', justifyContent: 'center', alignItems: 'center'},
-    closeButton: {position: 'absolute', top: 40, right: 20, zIndex: 10, padding: 10},
-    fullScreenImage: {width: '100%', height: '90%'}
+    // --- Updated Modal Styles ---
+    modalContainer: {flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.95)'},
+    modalHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingTop: 10,
+        gap: 24,
+        zIndex: 10,
+    },
+    modalActionButton: {
+        padding: 8,
+    },
+    pagerView: {flex: 1, width: '100%'},
+    pageContainer: {flex: 1, justifyContent: 'center', alignItems: 'center'},
+    fullScreenImage: {width: '100%', height: '85%'},
+    imageCounter: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 14,
+        position: 'absolute',
+        bottom: 40
+    }
 });
