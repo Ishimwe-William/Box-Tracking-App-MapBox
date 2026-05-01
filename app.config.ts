@@ -1,53 +1,54 @@
 import 'dotenv/config';
-import { ExpoConfig, ConfigContext } from 'expo/config';
+import {ExpoConfig, ConfigContext} from 'expo/config';
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
-  ...config,
-  name: "Box Tracking App",
-  slug: "snack-a2dfbe8d-69b5-41ad-85c3-be5105fe7799",
-  version: "1.0.0",
-  orientation: "default",
-  icon: "./assets/icon.png",
-  userInterfaceStyle: "light",
-  splash: {
-    image: "./assets/splash.png",
-    resizeMode: "contain",
-    backgroundColor: "#ffffff",
-  },
-  ios: {
-    supportsTablet: true,
-  },
-  android: {
-    permissions: [
-      "android.permission.ACCESS_FINE_LOCATION",
-      "android.permission.ACCESS_COARSE_LOCATION",
+export default ({config}: ConfigContext): ExpoConfig => ({
+    ...config,
+    name: "Box Tracking App",
+    slug: "snack-a2dfbe8d-69b5-41ad-85c3-be5105fe7799",
+    version: "1.0.0",
+    orientation: "default",
+    icon: "./assets/icon.png",
+    userInterfaceStyle: "light",
+    splash: {
+        image: "./assets/splash.png",
+        resizeMode: "contain",
+        backgroundColor: "#ffffff",
+    },
+    ios: {
+        supportsTablet: true,
+    },
+    android: {
+        permissions: [
+            "android.permission.ACCESS_FINE_LOCATION",
+            "android.permission.ACCESS_COARSE_LOCATION",
+        ],
+        package: "com.bunsenplus.boxtrackingmap",
+        adaptiveIcon: {
+            foregroundImage: "./assets/adaptive-icon.png",
+            backgroundColor: "#ffffff",
+        },
+        config: {
+            googleMaps: {
+                apiKey: process.env.EXPO_PUBLIC_MAP_API_KEY,
+            },
+        },
+    },
+    web: {
+        favicon: "./assets/favicon.png",
+    },
+    extra: {
+        EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
+        eas: {
+            projectId: "6d62f713-015a-4e73-bfd7-f312e4c7604f",
+        },
+    },
+    plugins: [
+        "@react-native-community/datetimepicker",
+        [
+            "@rnmapbox/maps",
+            {
+                RNMapboxMapsDownloadToken: process.env.MAPBOX_SECRET_TOKEN,
+            },
+        ],
     ],
-    package: "com.bunsenplus.boxtrackingmap",
-    adaptiveIcon: {
-      foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: "#ffffff",
-    },
-    config: {
-      googleMaps: {
-        apiKey: process.env.EXPO_PUBLIC_MAP_API_KEY,
-      },
-    },
-  },
-  web: {
-    favicon: "./assets/favicon.png",
-  },
-  extra: {
-    EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
-    eas: {
-      projectId: "6d62f713-015a-4e73-bfd7-f312e4c7604f",
-    },
-  },
-  plugins: [
-    [
-      "@rnmapbox/maps",
-      {
-        RNMapboxMapsDownloadToken: process.env.MAPBOX_SECRET_TOKEN,
-      },
-    ],
-  ],
 });
