@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
     KeyboardAvoidingView,
     Platform,
@@ -24,12 +24,17 @@ type AuthStackParamList = {
 };
 
 // Shared wrapper that fixes KeyboardAvoidingView on both iOS and Android
-const AuthLayout: React.FC<{ children: React.ReactNode; error: string; type: 'success' | 'error'; showError: boolean }> = ({
-                                                                                                                               children,
-                                                                                                                               error,
-                                                                                                                               type,
-                                                                                                                               showError,
-                                                                                                                           }) => (
+const AuthLayout: React.FC<{
+    children: React.ReactNode;
+    error: string;
+    type: 'success' | 'error';
+    showError: boolean
+}> = ({
+          children,
+          error,
+          type,
+          showError,
+      }) => (
     <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: '#f4f6f6' }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -76,6 +81,9 @@ const AuthScreens: React.FC = () => {
     const { error, setError, showError, type } = useErrorToast();
     const navigation = useNavigation<StackNavigationProp<AuthStackParamList>>();
 
+    // Ref for the password input to handle programmatic focus
+    const passwordRef = useRef<TextInput>(null);
+
     const handleLogin = async () => {
         if (!email.trim() || !password) {
             setError('Please enter both email and password.');
@@ -86,9 +94,9 @@ const AuthScreens: React.FC = () => {
             const userCredential = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
             const user = userCredential.user;
             const userDoc = await getDoc(doc(db, 'users', user.uid));
-            const userRole = userDoc.data()?.role || 'User';
-            // TODO: navigate to home or update global auth state using userRole
-        } catch (err: any) {
+
+        } catch (error: any) {
+            let err = error.message;
             setError('Failed to login. Please check your credentials.');
             console.error(err);
         } finally {
@@ -111,14 +119,20 @@ const AuthScreens: React.FC = () => {
                 autoCapitalize="none"
                 value={email}
                 onChangeText={setEmail}
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                blurOnSubmit={false}
             />
             <TextInput
+                ref={passwordRef}
                 style={styles.input}
                 placeholder="Password"
                 placeholderTextColor={COLORS.textMuted}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
             />
             <View style={{ marginTop: 10 }}>
                 <MyButton title="Login" handleSubmit={handleLogin} isLoading={isLoading} />
@@ -143,6 +157,9 @@ const SignupScreen: React.FC = () => {
     const { error, setError, showError, type } = useErrorToast();
     const navigation = useNavigation<StackNavigationProp<AuthStackParamList>>();
 
+    // Ref for the password input to handle programmatic focus
+    const passwordRef = useRef<TextInput>(null);
+
     const handleSignup = async () => {
         if (!email.trim() || !password) {
             setError('Please enter both email and password.');
@@ -156,8 +173,14 @@ const SignupScreen: React.FC = () => {
                 email: email.trim().toLowerCase(),
             });
             await sendEmailVerification(createdUser.user);
-        } catch (err: any) {
-            setError('Failed to create an account. Please try again.');
+        } catch (error: any) {
+            let err = error.message;
+            if (err.includes("Firebase: Error (auth/email-already-in-use)."))
+                setError("Email already in use. Please use a different email or log in.")
+            else if (err.includes("Password should be at least 6"))
+                setError("Password must be at least 6 characters long.")
+            else
+                setError('Failed to create an account. Please try again.');
             console.error(err);
         } finally {
             setIsLoading(false);
@@ -178,14 +201,20 @@ const SignupScreen: React.FC = () => {
                 autoCapitalize="none"
                 value={email}
                 onChangeText={setEmail}
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                blurOnSubmit={false}
             />
             <TextInput
+                ref={passwordRef}
                 style={styles.input}
                 placeholder="Password"
                 placeholderTextColor={COLORS.textMuted}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
+                returnKeyType="done"
+                onSubmitEditing={handleSignup}
             />
             <View style={{ marginTop: 10 }}>
                 <MyButton title="Sign Up" handleSubmit={handleSignup} isLoading={isLoading} />

@@ -13,7 +13,7 @@ export const MainNavigation = () => {
 
     if (loading) {
         return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'white' }}>
                 <Text>Loading...</Text>
                 <Text>Make sure you are connected to the internet.</Text>
             </View>
