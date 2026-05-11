@@ -6,7 +6,7 @@ Arduino.
 ## Integration with Arduino
 
 This app works with Arduino code which can be accessed
-here: [Arduino Sketch](https://app.arduino.cc/sketches/4e56493d-b10f-43d2-b81f-b061b49c5092?view-mode=preview)
+here: [Arduino Sketch](https://github.com/Ishimwe-William/Box-tracking-with-esp32-cam)
 
 ## Features
 

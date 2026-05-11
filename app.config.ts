@@ -10,9 +10,13 @@ export default ({config}: ConfigContext): ExpoConfig => ({
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     splash: {
-        image: "./assets/splash.png",
+        image: "./assets/splash-icon-light.png",
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        backgroundColor: "#F9F9F9",
+        dark: {
+            image: "./assets/splash-icon-dark.png",
+            backgroundColor: "#222222"
+        }
     },
     ios: {
         supportsTablet: true,
@@ -25,7 +29,7 @@ export default ({config}: ConfigContext): ExpoConfig => ({
         package: "com.bunsenplus.boxtrackingmap",
         adaptiveIcon: {
             foregroundImage: "./assets/adaptive-icon.png",
-            backgroundColor: "#ffffff",
+            backgroundColor: "#F9F9F9"
         },
         config: {
             googleMaps: {
